@@ -15,7 +15,7 @@ from wsidicom import WsiDicom
 import skimage
 import PIL
 ### Internal Imports ###
-from src.datasets.bg_removal import get_bg_rm_tool
+from BPTorch.datasets.bg_removal import get_bg_rm_tool
 ########################
 
 def get_default_kwargs():

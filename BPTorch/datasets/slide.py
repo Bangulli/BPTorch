@@ -14,8 +14,8 @@ import torch as tc
 import matplotlib.pyplot as plt
 from wsidicom import WsiDicom
 ### Internal Imports ###
-from src.utils.metadata import BPMeta
-from src.datasets.patch import WsiDicomDataset
+from BPTorch.utils.metadata import BPMeta
+from BPTorch.datasets.patch import WsiDicomDataset
 ########################
 
 class BigPictureRepository(tc.utils.data.Dataset):
