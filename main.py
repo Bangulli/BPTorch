@@ -1,4 +1,4 @@
-from bptorch import BigPictureRepository
+from BPTorch.datasets.slide import BigPictureRepository
 from BPTorch.utils.metadata import BPMeta
 # pip install "BPTorch @ git+https://github.com/Bangulli/BPTorch"
 if __name__ == '__main__':
