@@ -1,1 +1,1 @@
-from metadata import BPMeta
+from .metadata import BPMeta

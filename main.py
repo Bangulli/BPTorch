@@ -1,5 +1,5 @@
-from BPTorch.datasets.slide import BigPictureRepository
-from BPTorch.utils.metadata import BPMeta
+from BPTorch.datasets import BigPictureRepository
+from BPTorch.utils import BPMeta
 # pip install "BPTorch @ git+https://github.com/Bangulli/BPTorch"
 if __name__ == '__main__':
     ds = BigPictureRepository('/mnt/nas6/data/BigPicture_CBIR/datasets', verbose=False, return_type='patch', **BPMeta.get_default_kwargs())
