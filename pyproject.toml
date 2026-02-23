@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "BPTorch"
 version = "0.1.0"
-License = "Apache 2.0"
+License = "License"
 description = "A torch datasat for direct interfacing with BigPicture data"
 readme = "README.md"
 requires-python = ">=3.9"
