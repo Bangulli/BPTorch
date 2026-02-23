@@ -1,0 +1,1 @@
+# A torch dataset object to directly interface with a big picture data repository.
