@@ -84,6 +84,20 @@ class WsiDicomDataset():
                 self.upper_left_corners, self.coordinates = self.calculate_upper_left_corners_resampled(image_slide, mask_slide) ## self.resolution is set inside this func
 
             image_slide.close()
+    
+    @staticmethod      
+    def get_default_kwargs():
+        kwargs = {
+            "mask_path": None,
+            "target_mpp": 0.5,
+            "patch_size": (224, 224),
+            "patch_stride": (224, 224),
+            "calculate_mask": True,
+            "calculate_mask_params": "dilated-otsu",
+            "transforms": None,
+            "half_precision": True,
+        }
+        return kwargs
         
     def calculate_upper_left_corners(self, image_slide : WsiDicom, mask_slide : WsiDicom=None):
         """Calculates the coordinates of the upper left corners of every patch in the slide given the patch stride and patch size arguments
