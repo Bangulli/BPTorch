@@ -27,18 +27,18 @@ class BPMeta():
         return ['staining', 'diagnosis', 'organ', 'species']
     
     def __init__(self, ds):
-        self.ds = self.load_dataset_meta(ds)
-        self.mappings = self.create_mappings(self.ds)
-        self.lookup = self.make_lookup(ds)
+        self.ds = self._load_dataset_meta(ds)
+        self.mappings = self._create_mappings(self.ds)
+        self.lookup = self._make_lookup(ds)
         
     def __getitem__(self, key):
-        if key not in list(self.lookup.keys()): self.lookup[key]=self.get_meta_for_image_ID(self.ds, key, *self.mappings)
+        if key not in list(self.lookup.keys()): self.lookup[key]=self._get_meta_for_image_ID(self.ds, key, *self.mappings)
         return self.lookup[key]
     
-    def make_lookup(self, ds):
+    def _make_lookup(self, ds):
         lookup = {}
         for img in os.listdir(Path(ds)/'IMAGES'):
-            lookup[img]=self.get_meta_for_image_ID(self.ds, img, *self.mappings)
+            lookup[img]=self._get_meta_for_image_ID(self.ds, img, *self.mappings)
         return lookup
     
     def get_beings(self):
@@ -51,11 +51,11 @@ class BPMeta():
             else: images[v['being']].append(img)
         return beings, images
     
-    def load_dataset_meta(self, path):
+    def _load_dataset_meta(self, path):
         self.root = path
         return BPInterface.parse_xml_files(path)
 
-    def create_mappings(
+    def _create_mappings(
         self,
         ds: Dataset,
     ) -> tuple[dict[str, BiologicalBeing], dict[str, Specimen], dict[str, Observation]]:
@@ -74,7 +74,7 @@ class BPMeta():
                 observation_mapping[observation.item.identifier] = observation
         return biological_being_mapping, specimen_mapping, observation_mapping
         
-    def get_diagnosis(self, observation: Observation):
+    def _get_diagnosis(self, observation: Observation):
         try:
             try: diagnosis = observation.statement.code_attributes['Diagnosis']
             except: diagnosis = [diag for k, diag in observation.statement.custom_attributes.items() if 'diagnosis' in k.lower()]
@@ -84,36 +84,36 @@ class BPMeta():
         return diagnosis
 
 
-    def string_or_code_to_string(self, value: str | Code) -> str:
+    def _string_or_code_to_string(self, value: str | Code) -> str:
         if isinstance(value, Code):
             return value.meaning
         return value
 
 
-    def get_stain_description(self, stain: Stain):
+    def _get_stain_description(self, stain: Stain):
         if isinstance(stain, ChemicalStain):
-            return self.string_or_code_to_string(stain.compound)
+            return self._string_or_code_to_string(stain.compound)
         elif isinstance(stain, (ImmunogenicStain, InSituHybridisationStain)):
-            return self.string_or_code_to_string(stain.target)
+            return self._string_or_code_to_string(stain.target)
         raise ValueError(f"Unknown stain type: {type(stain)}")
 
 
-    def get_staining_description(self, image: Image) -> str | list[str]:
+    def _get_staining_description(self, image: Image) -> str | list[str]:
         if isinstance(image.slide.staining_information, StainingList):
             return [
-                self.get_stain_description(stain)
+                self._get_stain_description(stain)
                 for stain in image.slide.staining_information.stains
             ]
 
         elif isinstance(image.slide.staining_information, StainingProcedure):
-            return self.string_or_code_to_string(image.slide.staining_information.procedure)
+            return self._string_or_code_to_string(image.slide.staining_information.procedure)
         else:
             raise ValueError(
                 f"Unknown staining type: {type(image.slide.staining_information)}"
             )
 
 
-    def get_meta_for_image_ID(
+    def _get_meta_for_image_ID(
         self,
         ds: Dataset,
         image_accession: str,
@@ -154,11 +154,11 @@ class BPMeta():
             )
         observation = observation_mapping.get(specimen.identifier, None)
         if observation is not None:
-            diagnosis = self.get_diagnosis(observation)
+            diagnosis = self._get_diagnosis(observation)
         else:
             diagnosis = "unknown"
 
-        staining_description = self.get_staining_description(image)
+        staining_description = self._get_staining_description(image)
 
         # parse to dict
         meta = {

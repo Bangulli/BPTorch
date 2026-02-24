@@ -18,31 +18,17 @@ import PIL
 from BPTorch.datasets import get_bg_rm_tool
 ########################
 
-def get_default_kwargs():
-    kwargs = {
-        "mask_path": None,
-        "target_mpp": 0.5,
-        "patch_size": (224, 224),
-        "patch_stride": (224, 224),
-        "calculate_mask": True,
-        "calculate_mask_params": "dilated-otsu",
-        "transforms": None,
-        "half_precision": True,
-    }
-    return kwargs
-
 class WsiDicomDataset():
     """
     Parent class (to overload) responsible for managing the whole slide images. It handles masking the WSI content and splits the image into patches during loading.
     """
     def __init__(self,
         wsi_path : Union[str, Path],
-        mask_path : Union[str, Path, None],
-        target_mpp : float,
-        patch_size : tuple,
-        patch_stride: tuple,
-        calculate_mask : bool = False,
-        calculate_mask_params : str = 'dilated_otsu',
+        target_mpp : float = 0.5,
+        patch_size : tuple = (224, 224),
+        patch_stride: tuple = (224, 224),
+        calculate_mask : bool = True,
+        calculate_mask_params : str = 'dilated-otsu',
         transforms : Callable = None,
         half_precision : bool = True,
         verbose:bool = True,
@@ -53,7 +39,6 @@ class WsiDicomDataset():
         
         """
         self.wsi_path = wsi_path
-        self.mask_path = mask_path
         self.patch_size = patch_size
         self.patch_stride = patch_stride
         self.calculate_mask = calculate_mask
@@ -64,6 +49,7 @@ class WsiDicomDataset():
         self.image_slide = None
         self.verbose = verbose
         self.meta = metadata
+        self.target_mpp = target_mpp
 
         if not precomputed:
             image_slide = WsiDicom.open(self.wsi_path)
@@ -77,18 +63,18 @@ class WsiDicomDataset():
             
             if not self.resample: 
                 self.mpp = (image_slide.levels[self.resolution_level].mpp.width, image_slide.levels[self.resolution_level].mpp.height)
-                self.upper_left_corners, self.coordinates = self.calculate_upper_left_corners(image_slide, mask_slide)
+                self.upper_left_corners, self.coordinates = self._calculate_upper_left_corners(image_slide, mask_slide)
                 self.resolution = (image_slide.levels[self.resolution_level].size.height, image_slide.levels[self.resolution_level].size.width)
             else: 
                 self.mpp = (target_mpp, target_mpp)
-                self.upper_left_corners, self.coordinates = self.calculate_upper_left_corners_resampled(image_slide, mask_slide) ## self.resolution is set inside this func
+                self.upper_left_corners, self.coordinates = self._calculate_upper_left_corners_resampled(image_slide, mask_slide) ## self.resolution is set inside this func
 
             image_slide.close()
+            
     
     @staticmethod      
     def get_default_kwargs():
         kwargs = {
-            "mask_path": None,
             "target_mpp": 0.5,
             "patch_size": (224, 224),
             "patch_stride": (224, 224),
@@ -96,10 +82,12 @@ class WsiDicomDataset():
             "calculate_mask_params": "dilated-otsu",
             "transforms": None,
             "half_precision": True,
+            "precomputed": False,
+            "metadata": None,
         }
         return kwargs
         
-    def calculate_upper_left_corners(self, image_slide : WsiDicom, mask_slide : WsiDicom=None):
+    def _calculate_upper_left_corners(self, image_slide : WsiDicom, mask_slide : WsiDicom=None):
         """Calculates the coordinates of the upper left corners of every patch in the slide given the patch stride and patch size arguments
         Args:
             image_slide (WsiDicom): _description_
@@ -137,7 +125,7 @@ class WsiDicomDataset():
         coordinates = np.array(coordinates)
         return corners, coordinates
     
-    def calculate_upper_left_corners_resampled(self, image_slide : WsiDicom, mask_slide : WsiDicom=None, mpp=0.5):
+    def _calculate_upper_left_corners_resampled(self, image_slide : WsiDicom, mask_slide : WsiDicom=None, mpp=0.5):
         """Calculates the coordinates of the upper left corners of every patch in the slide given the patch stride and patch size arguments
         Args:
             image_slide (WsiDicom): _description_
@@ -219,14 +207,16 @@ class WsiDicomDataset():
         if self.image_slide is None:
             self.image_slide = WsiDicom.open(self.wsi_path)
             
-    def load_patch_at(self, coordinates):
+    def _load_patch_at(self, coordinates):
         self._ensure_image_is_open()
+        try: self.resolution_level = self._infer_level(self.image_slide, self.target_mpp); self.resample=False
+        except: self.resample = True
         if not self.resample: patch = self.image_slide.read_region(coordinates, self.resolution_level, self.patch_size).convert('RGB')
         else: patch = self.image_slide.read_region_mm(coordinates, self.mm_p_px, self.patch_size).convert('RGB')
         patch = np.array(patch)
         return patch
 
-    def get_coordinates(self, idx):
+    def _get_coordinates(self, idx):
         return self.upper_left_corners[idx], self.coordinates[idx]
     
     def get_resolution(self):
@@ -251,11 +241,11 @@ class WsiDicomDataset():
         if self.image_slide is not None: self.image_slide.close()
     
     def __getitem__(self, idx : Union[int, tuple]) -> Tuple[tc.Tensor]:
-        corners, coordinates = self.get_coordinates(idx) if type(idx)==int else idx
-        patch = self.load_patch_at(corners)
+        corners, coordinates = self._get_coordinates(idx) if type(idx)==int else idx
+        patch = self._load_patch_at(corners).astype(np.float16 if self.half_precision else np.float32)
+        patch = tc.from_numpy(patch)
+        coordinates = tc.tensor(coordinates, dtype=int)
         if self.transforms is not None:
-            patch = tc.from_numpy(patch).to(tc.float32 if not self.half_precision else tc.float16).permute(2, 0, 1)
             patch = self.transforms(patch)
-            patch = patch.contiguous()
-        to_return = {'images' : patch, 'coordinates' : coordinates, 'metadata':self.meta}
+        to_return = {'image' : patch, 'coordinates' : coordinates, 'metadata':self.meta}
         return to_return

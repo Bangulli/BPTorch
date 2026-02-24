@@ -22,7 +22,7 @@ class BigPictureRepository(tc.utils.data.Dataset):
     """
     A slide level dataset encapsulating all WSIs present in a directory
     """
-    def __init__(self, path: Union[str, Path], return_type='patch', images: list=None, verbose=True, load=False, **kwargs):
+    def __init__(self, path: Union[str, Path], return_type='patch', images: list=None, verbose=False, load=False, wsidicomdataset_kwargs=None):
         """Constructor.
 
         Args:
@@ -36,7 +36,8 @@ class BigPictureRepository(tc.utils.data.Dataset):
             BigPictureRepository: the instance
         """
         if not load:
-            self.kwargs = kwargs
+            self.kwargs = wsidicomdataset_kwargs
+            self.kwargs['verbose'] = verbose
             assert return_type.lower() in ['wsi', 'patch', 'path'], 'Invalid return type requested, must be [path, patch, wsi]'
             self.return_type = return_type.lower()
             self.stats = None
@@ -54,34 +55,56 @@ class BigPictureRepository(tc.utils.data.Dataset):
             }
             self.metadata_fields = BPMeta.get_supported_fields()
             self.unusable_images = []
-        else: self.load(path)
+            self.patches_prepared = False
+        else: 
+            self.verbose = verbose
+            self._load(path)
     
     def __len__(self):
         if self.return_type in ['wsi', 'path']:return len(self.imgs)
         elif self.return_type=='patch': return len(self.patch_idx)
     
     def __getitem__(self, idx):
-        if self.return_type=='wsi':return WsiDicomDataset(self.imgs[idx], verbose=self.verbose, metadata=self.meta[self.imgs[idx].parent.parent.name][self.imgs[idx].name], **self.kwargs)
+        if self.return_type=='wsi':
+            modkwargs = copy.deepcopy(self.kwargs)
+            if 'metadata' in modkwargs.keys(): del modkwargs['metadata']
+            return WsiDicomDataset(self.imgs[idx], metadata=self.meta[self.imgs[idx].parent.parent.name][self.imgs[idx].name], **modkwargs)
+        
         elif self.return_type=='path': return self.imgs[idx]
+        
         elif self.return_type=='patch':
+            assert self.patches_prepared, "Return type is patch but data was attempted to be accessed before the patches were prepared."
+            modkwargs = copy.deepcopy(self.kwargs)
+            if 'metadata' in modkwargs.keys(): del modkwargs['metadata']
+            modkwargs['precomputed'] = True
             key, p_idx, i_idx = self.patch_idx[idx]
             corners, coords = self.patches[key]['corners'][p_idx], self.patches[key]['coords'][p_idx]
-            wsi = WsiDicomDataset(self.imgs[i_idx], verbose=self.verbose, metadata=self.meta[self.imgs[idx].parent.parent.name][self.imgs[idx].name], precomputed=True, **self.kwargs)
+            wsi = WsiDicomDataset(self.imgs[i_idx], metadata=self.meta[self.imgs[idx].parent.parent.name][self.imgs[idx].name], **modkwargs)
             return wsi[(corners, coords)]
             
     def prepare_patches(self):
+        if self.patches_prepared: return
         assert self.return_type=='patch', f'It is not required to prepare patches, if the return type is {self.return_type}'
-        iterator = enumerate(self.imgs) if self.verbose else tqdm.tqdm(enumerate(self.imgs), desc=f'Preparing patches for {len(self.imgs)} WSIs')
+        iterator = self.imgs if self.verbose else tqdm.tqdm(self.imgs, desc=f'Preparing patches for {len(self.imgs)} WSIs')
         start_idx = 0
-        for i, img in iterator:
+        for i, img in enumerate(iterator):
             try:
-                wsi = WsiDicomDataset(img, verbose=self.verbose, **self.kwargs)
+                wsi = WsiDicomDataset(img, **self.kwargs)
                 n_patches = len(wsi)
+                ### convert to json serializable
+                coords = []
+                for i in range(wsi.coordinates.shape[0]):
+                    coords.append((int(wsi.coordinates[i, 0]), int(wsi.coordinates[i, 1])))
+                corners = []
+                for i in range(wsi.upper_left_corners.shape[0]):
+                    corners.append((int(wsi.upper_left_corners[i, 0]), int(wsi.upper_left_corners[i, 1])))
+                
+                ## make dict
                 cur_data = {
                     'lower': start_idx,
                     'upper': start_idx+n_patches,
-                    'coords': wsi.coordinates,
-                    'corners': wsi.upper_left_corners
+                    'coords': coords,
+                    'corners': corners
                 }
                 self.patches[start_idx]=cur_data
                 for j in range(n_patches):
@@ -91,6 +114,8 @@ class BigPictureRepository(tc.utils.data.Dataset):
                 if self.verbose: print(f"Image {img} cannot be patched and will be removed from the dataset")
                 self.imgs.remove(img)
                 self.unusable_images.append(img)
+            
+        self.patches_prepared = True
         
     def get_stats(self):
         """Function to generate a dictionary of the metadata distribution in the repo
@@ -164,7 +189,7 @@ class BigPictureRepository(tc.utils.data.Dataset):
                 fold_images = []
                 for b in v:
                     fold_images += being2images[b]
-                splits.append(BigPictureRepository(path=self.root, images=fold_images, verbose=self.verbose, return_type=self.return_type, **self.kwargs))
+                splits.append(BigPictureRepository(path=self.root, images=fold_images, verbose=self.verbose, return_type=self.return_type, wsidicomdataset_kwargs=self.kwargs))
             return splits
         
         best_split = copy.deepcopy(fold_assignments)
@@ -192,7 +217,7 @@ class BigPictureRepository(tc.utils.data.Dataset):
                     fold_images = []
                     for b in v:
                         fold_images += being2images[b]
-                    splits.append(BigPictureRepository(path=self.root, images=fold_images, verbose=self.verbose, return_type=self.return_type, **self.kwargs))
+                    splits.append(BigPictureRepository(path=self.root, images=fold_images, verbose=self.verbose, return_type=self.return_type, wsidicomdataset_kwargs=self.kwargs))
                 return splits 
             
             ## attempt optimization
@@ -280,7 +305,7 @@ class BigPictureRepository(tc.utils.data.Dataset):
             fold_images = []
             for b in v:
                 fold_images += being2images[b]
-            splits.append(BigPictureRepository(path=self.root, images=fold_images, verbose=self.verbose, return_type=self.return_type, **self.kwargs))
+            splits.append(BigPictureRepository(path=self.root, images=fold_images, verbose=self.verbose, return_type=self.return_type, wsidicomdataset_kwargs=self.kwargs))
         return splits
        
     def save(self, path):
@@ -294,25 +319,28 @@ class BigPictureRepository(tc.utils.data.Dataset):
             "imgs": [str(i) for i in self.imgs],
             "nomenclature": self.nomenclature,
             "stats": self.stats,
-            "unusable_images": self.unusable_images
+            "unusable_images": [str(i) for i in self.unusable_images],
+            "patches_prepared": self.patches_prepared
         }
         with open(path, "w") as f:
             json.dump(full_dict, f, indent=4)
     
-    def load(self, path):
+    def _load(self, path):
         with open(path, "r") as f:
             full_dict = json.load(f)
         self.kwargs = full_dict['kwargs']
+        self.kwargs['verbose'] = self.verbose
         self.return_type = full_dict['return_type']
         self.root = Path(full_dict['root'])
         self._BP_datasets = [Path(ds) for ds in full_dict['_BP_datasets']]
         self.meta = {ds.name: BPMeta(ds) for ds in self._BP_datasets}
-        self.patches = full_dict['patches']
+        self.patches =  {int(k):v for k , v in full_dict['patches'].items()}
         self.patch_idx = full_dict['patch_idx']
         self.imgs = [Path(i) for i in full_dict['imgs']]
         self.nomenclature = full_dict['nomenclature']
         self.stats = full_dict['stats']
-        self.unusable_images = full_dict['unusable_images']
+        self.unusable_images = [Path(i) for i in full_dict['unusable_images']]
+        self.patches_prepared = full_dict['patches_prepared']
          
     def _check_split_strat_tol(self, fold_stats, ref_stat, tol, image_counts, stratify): ## func to check if the split fulfill the stratification within tolerance
         folds = {'staining':True, 'diagnosis':True, 'organ':True, 'species':True}
