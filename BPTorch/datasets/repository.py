@@ -53,6 +53,7 @@ class BigPictureRepository(tc.utils.data.Dataset):
                 'str2short': {}
             }
             self.metadata_fields = BPMeta.get_supported_fields()
+            self.unusable_images = []
         else: self.load(path)
     
     def __len__(self):
@@ -73,18 +74,23 @@ class BigPictureRepository(tc.utils.data.Dataset):
         iterator = enumerate(self.imgs) if self.verbose else tqdm.tqdm(enumerate(self.imgs), desc=f'Preparing patches for {len(self.imgs)} WSIs')
         start_idx = 0
         for i, img in iterator:
-            wsi = WsiDicomDataset(img, verbose=self.verbose, **self.kwargs)
-            n_patches = len(wsi)
-            cur_data = {
-                'lower': start_idx,
-                'upper': start_idx+n_patches,
-                'coords': wsi.coordinates,
-                'corners': wsi.upper_left_corners
-            }
-            self.patches[start_idx]=cur_data
-            for j in range(n_patches):
-                self.patch_idx.append((start_idx, j, i))
-            start_idx+=n_patches
+            try:
+                wsi = WsiDicomDataset(img, verbose=self.verbose, **self.kwargs)
+                n_patches = len(wsi)
+                cur_data = {
+                    'lower': start_idx,
+                    'upper': start_idx+n_patches,
+                    'coords': wsi.coordinates,
+                    'corners': wsi.upper_left_corners
+                }
+                self.patches[start_idx]=cur_data
+                for j in range(n_patches):
+                    self.patch_idx.append((start_idx, j, i))
+                start_idx+=n_patches
+            except:
+                if self.verbose: print(f"Image {img} cannot be patched and will be removed from the dataset")
+                self.imgs.remove(img)
+                self.unusable_images.append(img)
         
     def get_stats(self):
         """Function to generate a dictionary of the metadata distribution in the repo
@@ -287,7 +293,8 @@ class BigPictureRepository(tc.utils.data.Dataset):
             "patch_idx": self.patch_idx,
             "imgs": [str(i) for i in self.imgs],
             "nomenclature": self.nomenclature,
-            "stats": self.stats
+            "stats": self.stats,
+            "unusable_images": self.unusable_images
         }
         with open(path, "w") as f:
             json.dump(full_dict, f, indent=4)
@@ -305,6 +312,7 @@ class BigPictureRepository(tc.utils.data.Dataset):
         self.imgs = [Path(i) for i in full_dict['imgs']]
         self.nomenclature = full_dict['nomenclature']
         self.stats = full_dict['stats']
+        self.unusable_images = full_dict['unusable_images']
          
     def _check_split_strat_tol(self, fold_stats, ref_stat, tol, image_counts, stratify): ## func to check if the split fulfill the stratification within tolerance
         folds = {'staining':True, 'diagnosis':True, 'organ':True, 'species':True}
