@@ -15,7 +15,7 @@ import matplotlib.pyplot as plt
 from wsidicom import WsiDicom
 ### Internal Imports ###
 from BPTorch.utils.metadata import BPMeta
-from BPTorch.datasets.patch import WsiDicomDataset
+from BPTorch.datasets.wsi import WsiDicomDataset
 ########################
 
 class BigPictureRepository(tc.utils.data.Dataset):
