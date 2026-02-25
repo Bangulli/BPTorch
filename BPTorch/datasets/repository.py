@@ -326,8 +326,11 @@ class BigPictureRepository(tc.utils.data.Dataset):
             json.dump(full_dict, f, indent=4)
     
     def _load(self, path):
+        print("Loading file...")
         with open(path, "r") as f:
             full_dict = json.load(f)
+        print("Done!")
+        print("Pupulating attributes...")
         self.kwargs = full_dict['kwargs']
         self.kwargs['verbose'] = self.verbose
         self.return_type = full_dict['return_type']
@@ -341,6 +344,7 @@ class BigPictureRepository(tc.utils.data.Dataset):
         self.stats = full_dict['stats']
         self.unusable_images = [Path(i) for i in full_dict['unusable_images']]
         self.patches_prepared = full_dict['patches_prepared']
+        print("Done!")
          
     def _check_split_strat_tol(self, fold_stats, ref_stat, tol, image_counts, stratify): ## func to check if the split fulfill the stratification within tolerance
         folds = {'staining':True, 'diagnosis':True, 'organ':True, 'species':True}

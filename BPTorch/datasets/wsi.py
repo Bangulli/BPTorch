@@ -243,7 +243,7 @@ class WsiDicomDataset():
     def __getitem__(self, idx : Union[int, tuple]) -> Tuple[tc.Tensor]:
         corners, coordinates = self._get_coordinates(idx) if type(idx)==int else idx
         patch = self._load_patch_at(corners).astype(np.float16 if self.half_precision else np.float32)
-        patch = tc.from_numpy(patch)
+        patch = tc.from_numpy(patch).permute(2, 0, 1)
         coordinates = tc.tensor(coordinates, dtype=int)
         if self.transforms is not None:
             patch = self.transforms(patch)

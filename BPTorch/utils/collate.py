@@ -9,7 +9,7 @@ def bptorch_collate(batch):
        meta.append(item['metadata']) 
     res = {
         'image': torch.stack(images),
-        'coordiantes': torch.stack(coordinates),
+        'coordinates': torch.stack(coordinates),
         'metadata': meta
     }
     return res

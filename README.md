@@ -14,9 +14,12 @@ pip install "BPTorch @ git+https://github.com/Bangulli/BPTorch"
 The example below instantiates a repository class and splits the images into folds 0.8 = Training; 0.1 = Validation; 0.1 = Testing. The patches are then prepared according to the [WsiDicomDataset](#wsidicomdataset) class with dilated-otsu based background removal at 0.5mpp i.e. 20X magnification to avoid recomputing on the fly the prepared repo objects are saved to disk.
 ```python
 from BPTorch.datasets import BigPictureRepository, WsiDicomDataset
+from torch.utils.data import DataLoader
+from BPTorch.utils import bptorch_collate
+from pprint import pprint
 # pip install "BPTorch @ git+https://github.com/Bangulli/BPTorch"
 if __name__ == '__main__':
-    ds = BigPictureRepository('/mnt/nas6/data/BigPicture_CBIR/datasets', verbose=False, return_type='patch', **WsiDicomDataset.get_default_kwargs())
+    ds = BigPictureRepository('/mnt/nas6/data/BigPicture_CBIR/datasets', verbose=False, return_type='patch', wsidicomdataset_kwargs=WsiDicomDataset.get_default_kwargs())
     ds.get_stats_plot("base")
     splits=ds.split('0.1-0.1-0.8', stratify=['species', 'organ', 'staining', 'diagnosis'], max_iter=5, fail="raise", tol=0.025)
     print("Obtained splits.")
@@ -24,7 +27,7 @@ if __name__ == '__main__':
         s.get_stats_plot(f"fold_{i}")
         s.prepare_patches()
         s.save(f"fold_{i}/BPR.json")
-
+        
     ds = BigPictureRepository('/home/lorenz/BigPicture/BPTorch/fold_0/BPR.json', load=True, wsidicomdataset_kwargs=WsiDicomDataset.get_default_kwargs(), verbose=False)
     print(f"Dataset contains {len(ds)} foreground patches")
     patch = ds[213]
@@ -32,7 +35,7 @@ if __name__ == '__main__':
     
     dl = DataLoader(ds, 4, collate_fn=bptorch_collate)
     for batch in dl:
-        print(batch)
+        pprint(batch)
         break
 ```
 
@@ -41,7 +44,7 @@ In-depth description of the provided classes is given below.
 
 ### BigPictureRepository
 The class representing a collection of BigPicture Datasets.
-Extends ```torch.utils.data.Dataset``` so it is compatible with dataloaders. Data access by ```Instance[idx]``` will return a dictionary: ```{'image' : Tensor, 'coordinates' : tuple, 'metadata': dict}``` if ```return_type``` is 'patch'; a [WsiDicomDataset](#wsidicomdataset) object if ```return_type``` is 'wsi' or a path if ```return_type``` is 'path'
+Extends ```torch.utils.data.Dataset``` so it is compatible with dataloaders. Data access by ```Instance[idx]``` will return a dictionary:  ```{'image' : Tensor[C, W, H], 'coordinates' : Tensor[WH], 'metadata': dict}``` if ```return_type``` is 'patch'; a [WsiDicomDataset](#wsidicomdataset) object if ```return_type``` is 'wsi' or a path if ```return_type``` is 'path'
 
 #### Parameters
 - ```path```: String or pathlib.Path object; required; the path to the directory where the BigPicture datasets live or a path to a [BigPictureRepository](#bigpicturerepository) .json file.
@@ -69,7 +72,7 @@ Extends ```torch.utils.data.Dataset``` so it is compatible with dataloaders. Dat
 
 ### WsiDicomDataset
 The class representing a single WSI. Based on wsidicom so it can only read direcotries of dicom files as images.
-Extends ```torch.utils.data.Dataset``` so it is compatible with dataloaders. Data access by ```Instance[idx]``` will return a dictionary: ```{'image' : Tensor, 'coordinates' : tuple, 'metadata': dict}```. Supports patching and background removal.
+Extends ```torch.utils.data.Dataset``` so it is compatible with dataloaders. Data access by ```Instance[idx]``` will return a dictionary: ```{'image' : Tensor[C, W, H], 'coordinates' : Tensor[WH], 'metadata': dict}```. Supports patching and background removal.
 
 #### Parameters
 - ```wsi_path```: String or pathlib.Path; required; the path to the current image directory.
@@ -100,3 +103,8 @@ A wrapper object for [BigPicture Metadata Interface](https://github.com/imi-bigp
 #### Functions
 - ```get_beings```: Returns a list of all beings in the dataset as well as a dictionary mapping the being ID to their image IDs
 - ```get_supported_fields```: Returns a list of the supported fields.
+
+### Utils
+
+#### Collation function
+A collateion function is provided as ```BPTorch.utils.bptorch_collate```. It stacks the tensors for image and coordiantes into  ```{'image' : Tensor[B, C, W, H], 'coordinates' : Tensor[B, WH], 'metadata': list[dict]}```.
