@@ -87,7 +87,7 @@ class BigPictureRepository(tc.utils.data.Dataset):
         assert self.return_type=='patch', f'It is not required to prepare patches, if the return type is {self.return_type}'
         iterator = self.imgs if self.verbose else tqdm.tqdm(self.imgs, desc=f'Preparing patches for {len(self.imgs)} WSIs')
         start_idx = 0
-        for i, img in enumerate(iterator):
+        for i1, img in enumerate(iterator):
             try:
                 wsi = WsiDicomDataset(img, **self.kwargs)
                 n_patches = len(wsi)
@@ -108,12 +108,13 @@ class BigPictureRepository(tc.utils.data.Dataset):
                 }
                 self.patches[start_idx]=cur_data
                 for j in range(n_patches):
-                    self.patch_idx.append((start_idx, j, i))
+                    self.patch_idx.append((start_idx, j, i1))
                 start_idx+=n_patches
-            except:
+            except Exception as e:
                 if self.verbose: print(f"Image {img} cannot be patched and will be removed from the dataset")
                 self.imgs.remove(img)
                 self.unusable_images.append(img)
+                if 'KeyboardInterrupt' in e: raise e
             
         self.patches_prepared = True
         
@@ -330,7 +331,7 @@ class BigPictureRepository(tc.utils.data.Dataset):
         with open(path, "r") as f:
             full_dict = json.load(f)
         print("Done!")
-        print("Pupulating attributes...")
+        print("Populating attributes...")
         self.kwargs = full_dict['kwargs']
         self.kwargs['verbose'] = self.verbose
         self.return_type = full_dict['return_type']
