@@ -1,6 +1,7 @@
 wsidicom
-torch
 scikit-image
+torch
+torchvision
 opencv-python
 numpy
 matplotlib

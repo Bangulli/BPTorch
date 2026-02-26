@@ -5,8 +5,9 @@ Summary: A torch datasat for direct interfacing with BigPicture data
 Requires-Python: >=3.9
 Description-Content-Type: text/markdown
 Requires-Dist: wsidicom
-Requires-Dist: torch
 Requires-Dist: scikit-image
+Requires-Dist: torch
+Requires-Dist: torchvision
 Requires-Dist: opencv-python
 Requires-Dist: numpy
 Requires-Dist: matplotlib
