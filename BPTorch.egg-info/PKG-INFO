@@ -1,0 +1,124 @@
+Metadata-Version: 2.4
+Name: BPTorch
+Version: 0.1.0
+Summary: A torch datasat for direct interfacing with BigPicture data
+Requires-Python: >=3.9
+Description-Content-Type: text/markdown
+Requires-Dist: wsidicom
+Requires-Dist: torch
+Requires-Dist: scikit-image
+Requires-Dist: opencv-python
+Requires-Dist: numpy
+Requires-Dist: matplotlib
+Requires-Dist: bigpicture_metadata_interface @ git+https://github.com/imi-bigpicture/bigpicture_metadata_interface.git@06e86065d1924f28a74e542a2233c10675df0790
+
+# A torch dataset object to directly interface with a big picture data repository.
+
+## Description
+A torch.utils.datasets based class that interfaces directly with BigPicture repository datasets on disk.
+Point it to a directory where your BP-datasets are stored and it will find all datasets and images within and return the images in paths, [WsiDicomDataset](#wsidicomdataset) or directly as patches.
+
+## Installation
+Install from github using pip, Note that you need access to the [BigPicture Metadata Interface](https://github.com/imi-bigpicture/bigpicture-metadata-interface) repository
+```bash
+pip install "BPTorch @ git+https://github.com/Bangulli/BPTorch"
+```
+
+## Usage
+The example below instantiates a repository class and splits the images into folds 0.8 = Training; 0.1 = Validation; 0.1 = Testing. The patches are then prepared according to the [WsiDicomDataset](#wsidicomdataset) class with dilated-otsu based background removal at 0.5mpp i.e. 20X magnification to avoid recomputing on the fly the prepared repo objects are saved to disk.
+```python
+from BPTorch.datasets import BigPictureRepository, WsiDicomDataset
+from torch.utils.data import DataLoader
+from BPTorch.utils import bptorch_collate
+from pprint import pprint
+# pip install "BPTorch @ git+https://github.com/Bangulli/BPTorch"
+if __name__ == '__main__':
+    ds = BigPictureRepository('/mnt/nas6/data/BigPicture_CBIR/datasets', verbose=False, return_type='patch', wsidicomdataset_kwargs=WsiDicomDataset.get_default_kwargs())
+    ds.get_stats_plot("base")
+    splits=ds.split('0.1-0.1-0.8', stratify=['species', 'organ', 'staining', 'diagnosis'], max_iter=5, fail="raise", tol=0.025)
+    print("Obtained splits.")
+    for i, s in enumerate(splits):
+        s.get_stats_plot(f"fold_{i}")
+        s.prepare_patches()
+        s.save(f"fold_{i}/BPR.json")
+        
+    ds = BigPictureRepository('/home/lorenz/BigPicture/BPTorch/fold_0/BPR.json', load=True, wsidicomdataset_kwargs=WsiDicomDataset.get_default_kwargs(), verbose=False)
+    print(f"Dataset contains {len(ds)} foreground patches")
+    patch = ds[213]
+    pprint(patch)
+    
+    dl = DataLoader(ds, 4, collate_fn=bptorch_collate)
+    for batch in dl:
+        pprint(batch)
+        break
+```
+
+## API Reference
+In-depth description of the provided classes is given below.
+
+### BigPictureRepository
+The class representing a collection of BigPicture Datasets.
+Extends ```torch.utils.data.Dataset``` so it is compatible with dataloaders. Data access by ```Instance[idx]``` will return a dictionary:  ```{'image' : Tensor[C, W, H], 'coordinates' : Tensor[WH], 'metadata': dict}``` if ```return_type``` is 'patch'; a [WsiDicomDataset](#wsidicomdataset) object if ```return_type``` is 'wsi' or a path if ```return_type``` is 'path'
+
+#### Parameters
+- ```path```: String or pathlib.Path object; required; the path to the directory where the BigPicture datasets live or a path to a [BigPictureRepository](#bigpicturerepository) .json file.
+- ```return_type```: String; optional -> default 'patch'; the type of data returned when accessing the object. If 'patch' returns patches, if 'path' returns paths to images, if 'wsi' returns [WsiDicomDataset](#wsidicomdataset) objects.
+- ```images```: list; optional -> default None; the images present in this instance of the repository, if provided all other images in the repository are ignored.
+- ```verbose```: bool; optional -> default True; If true prints detailed infromation for any process to the console.
+- ```load```: bool; optional -> default False; If true treats path as a path to a [BigPictureRepository](#bigpicturerepository) .json file and attempts to load it.
+- ```wsidicomdataset_kwargs```: dict; optional -> default None; The parameters for the underlying [WsiDicomDataset](#wsidicomdataset) for each WSI.
+
+#### Functions
+- ```prepare_patches```: If return_type is 'patch' prepares the patches for all images in the current repository instance according to the kwargs passed to [WsiDicomDataset](#wsidicomdataset)
+- ```get_stats```: Returns a dictionary of the absoulute number of occurances of any metadata variable in the repository, as long as the metadata field is supported by [BPMeta](#bpmeta)
+- ```get_stats_plot```: Generates pie charts of the datadistribution of variables for each metadata field supported by [BPMeta](#bpmeta).
+    - path: String or pathlib.Path; required; Path to a directory where the plots will be saved
+- ```split```: Splits the images in the repository into n folds. Can perform stratification by iteratively permuting the dataset to optimize the data distribution according to metadata fields until a tolerance criterion is fulfilled.
+    - ```folds```: String; optional -> default '0.9-0.1'; a string describing the splits. Must be a series of floats separated by '-', the sum of all floats must be 1. Each float in the string represents one fold and subsequently the fraction of data in the fold.
+    - ```stratify```: list; optional -> default None; A list of metadata fields to stratify for if none, will do no startification. The fields must be supported by [BPMeta](#bpmeta).
+    - ```eval_strategy```: string; optional -> default 'average'; How to evaluate the stratification, if 'average' will evaluate the average discrepancy accross all fields given by stratify, if 'strict' will evaluate them each individually.
+    - ```random_seed```: int; optional -> default 42; The random seed for the split initialization.
+    - ```tol```: float; optional -> default 0.05; The tolerance criterion at which to accept a split. The relative discrepancy between splits must be less than tol.
+    - ```fail```: String; optional -> default 'raise'; Behaviour when splitting fails after max_iter. If 'raise' will raise an exception, if 'warn' will warn and return best split, if 'ignore' will quietly return the best split.
+    - ```max_iter```: int; optional -> default 100; how many stratification optimization iterations to do before considering a split failed.
+- ```save```: Save the repository instance as a .json dictionary.
+    - ```path```: any; required; the path to the file the repo instance is stored in.
+
+### WsiDicomDataset
+The class representing a single WSI. Based on wsidicom so it can only read direcotries of dicom files as images.
+Extends ```torch.utils.data.Dataset``` so it is compatible with dataloaders. Data access by ```Instance[idx]``` will return a dictionary: ```{'image' : Tensor[C, W, H], 'coordinates' : Tensor[WH], 'metadata': dict}```. Supports patching and background removal.
+
+#### Parameters
+- ```wsi_path```: String or pathlib.Path; required; the path to the current image directory.
+- ```target_mpp```: float; optional -> default 0.5 (i.e. 20X); At which mpp to read the image, If a close enough mpp is found in the levels will use that, if not will resample on the fly.
+- ```patch_size```: tuple; optional -> default (224, 224); Patch size in pixels.
+- ```patch_stride```: tuple; optional -> default (224, 224); Patch stride in pixels.
+- ```calculate_mask```: bool; optional -> default False; If true will use the ```calculate_mask_params``` to remove background patches.
+- ```calculate_mask_params```: string; optional -> default 'dilated-otsu'; Which method to use to remove background patches. If 'otsu' will use a basic otsu, if 'dilated-otsu' will use otsu + dilation by 64 micrometers which yields over-segmentation and tolerates some backgorund, if 'cleaned-otsu' will use otsu + closing + opening by 64 micrometers which yields the most contour-accurate foregound segemnation without holes. Segmentation is performed on a thumbnail at 5X magnification to avoid extensive compute time by working on individual patches. Patches are scaled to the correct size in the thumbnail.
+- ```transforms```: callable; optional -> default None; the transforms to apply to the image patches before returning.
+- ```half_precision```: bool; optional -> default True, If true will return image tensors at FP16, if false will use FP32.
+- ```verbose```: bool; optional -> default True, If true will print detailed information to the console.
+- ```precomputed```: bool; optional -> default False, If true will not perfomr patching upon instantiation. In this case the Instance cannot be accessed with ```Instance[int]``` but instead requires ```Instance[((corners),(coordinates))]``` that were previously computed.
+- ```metadata```: dict; optional -> default None, The metadata for the current image.
+
+#### Functions
+- ```get_default_kwargs```: Returns the default configuration for [WsiDicomDataset](#wsidicomdataset) as a dict.
+- ```get_resolution```: Returns a tuple of the resolution in pixels of the WSI.
+- ```get_number_of_cols```: Returns the number of patch columns in the image
+- ```get_number_of_rows```: Returns the number of patch rows in the image
+
+### BPMeta
+A wrapper object for [BigPicture Metadata Interface](https://github.com/imi-bigpicture/bigpicture-metadata-interface) that allows reverse mapping from Image IDs to the metadata associated with their superior instances in the metadata hierarchy. If accessed with ```Instance[Image_ID]``` will return a dict of the metadata for the supported fields. Metadata is only generated for the supported fields that can be found by calling ```BPMeta.get_supported_fields()``` this is because the object creates reverse lookup tables at instantiation to avoid computationally expensive reverse mapping procedures for every access. Can be extended by modifying a clone of the repo.
+**Warning:** The BigPicture Metadata Interface is hierarchical and unidirectional, largely in the opposite direction of this mapping, so the metadata extraction may not be able to accommodate all the possible ways it is stored. In cases like this the field will be populated with 'unknown'. 
+
+#### Parameters
+- ```ds```: string or pathlib.Path; required; The path to the dataset directory.
+
+#### Functions
+- ```get_beings```: Returns a list of all beings in the dataset as well as a dictionary mapping the being ID to their image IDs
+- ```get_supported_fields```: Returns a list of the supported fields.
+
+### Utils
+
+#### Collation function
+A collateion function is provided as ```BPTorch.utils.bptorch_collate```. It stacks the tensors for image and coordiantes into  ```{'image' : Tensor[B, C, W, H], 'coordinates' : Tensor[B, WH], 'metadata': list[dict]}```.

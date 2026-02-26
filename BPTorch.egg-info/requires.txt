@@ -1,0 +1,7 @@
+wsidicom
+torch
+scikit-image
+opencv-python
+numpy
+matplotlib
+bigpicture_metadata_interface @ git+https://github.com/imi-bigpicture/bigpicture_metadata_interface.git@06e86065d1924f28a74e542a2233c10675df0790
