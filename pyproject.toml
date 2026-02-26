@@ -12,7 +12,8 @@ requires-python = ">=3.9"
 dependencies = ["wsidicom", "torch", "scikit-image", "opencv-python", "numpy", "matplotlib", "bigpicture_metadata_interface @ git+https://github.com/imi-bigpicture/bigpicture_metadata_interface.git@06e86065d1924f28a74e542a2233c10675df0790"]
 
 [tool.setuptools]
-package-dir = {"" = "BPTorch"}
+package-dir = {"" = "."}
 
 [tool.setuptools.packages.find]
-where = ["BPTorch"]
+where = ["."]
+include = ["BPTorch*"]

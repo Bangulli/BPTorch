@@ -114,7 +114,7 @@ class BigPictureRepository(tc.utils.data.Dataset):
                 if self.verbose: print(f"Image {img} cannot be patched and will be removed from the dataset")
                 self.imgs.remove(img)
                 self.unusable_images.append(img)
-                if 'KeyboardInterrupt' in e: raise e
+                if 'KeyboardInterrupt' in str(e): raise e
             
         self.patches_prepared = True
         
