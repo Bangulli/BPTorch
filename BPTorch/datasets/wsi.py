@@ -212,7 +212,6 @@ class WsiDicomDataset():
         except: self.resample = True
         if not self.resample: patch = self.image_slide.read_region(coordinates, self.resolution_level, self.patch_size).convert('RGB')
         else: patch = self.image_slide.read_region_mm(coordinates, self.mm_p_px, self.patch_size).convert('RGB')
-        patch = np.array(patch)
         return patch
 
     def _get_coordinates(self, idx):
