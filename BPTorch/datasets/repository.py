@@ -79,7 +79,7 @@ class BigPictureRepository(tc.utils.data.Dataset):
             modkwargs['precomputed'] = True
             key, p_idx, i_idx = self.patch_idx[idx]
             corners, coords = self.patches[key]['corners'][p_idx], self.patches[key]['coords'][p_idx]
-            wsi = WsiDicomDataset(self.imgs[i_idx], metadata=self.meta[self.imgs[idx].parent.parent.name][self.imgs[idx].name], **modkwargs)
+            wsi = WsiDicomDataset(self.imgs[i_idx], metadata=self.meta[self.imgs[i_idx].parent.parent.name][self.imgs[i_idx].name], **modkwargs)
             return wsi[(corners, coords)]
             
     def prepare_patches(self):
