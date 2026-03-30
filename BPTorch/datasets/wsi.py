@@ -70,6 +70,11 @@ class WsiDicomDataset():
 
             image_slide.close()
             
+        else:
+            um2mm = 0.001 ## um * um2mm = mm (u = mu) converter
+            self.mm_p_px = self.target_mpp*um2mm
+            
+            
     
     @staticmethod      
     def get_default_kwargs():
