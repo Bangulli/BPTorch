@@ -69,16 +69,8 @@ class WsiDicomDataset():
                 self.upper_left_corners, self.coordinates = self._calculate_upper_left_corners_resampled(image_slide, mask_slide) ## self.resolution is set inside this func
 
             image_slide.close()
-            
         else:
-            um2mm = 0.001 ## um * um2mm = mm (u = mu) converter
-            self.mm_p_px = self.target_mpp*um2mm
-            ## convert patch size to mm
-            patch_height_mm = self.patch_size[0]*self.target_mpp*um2mm
-            patch_width_mm = self.patch_size[1]*self.target_mpp*um2mm
-            
-            ## overwrite stirdes and sizes
-            self.patch_size = (patch_height_mm,patch_width_mm)
+            self.mpp = (self.target_mpp, self.target_mpp)
             
             
     
@@ -220,9 +212,17 @@ class WsiDicomDataset():
     def _load_patch_at(self, coordinates):
         self._ensure_image_is_open()
         try: self.resolution_level = self._infer_level(self.image_slide, self.target_mpp); self.resample=False
-        except: self.resample = True
+        except: 
+            self.resample = True
+            um2mm = 0.001 ## um * um2mm = mm (u = mu) converter
+            self.mm_p_px = self.target_mpp*um2mm
+            ## convert patch size to mm
+            patch_height_mm = self.patch_size[0]*self.target_mpp*um2mm
+            patch_width_mm = self.patch_size[1]*self.target_mpp*um2mm
+            ## overwrite stirdes and sizes
+            self.patch_size = (patch_height_mm,patch_width_mm)
         if not self.resample: patch = self.image_slide.read_region(coordinates, self.resolution_level, self.patch_size).convert('RGB')
-        else: patch = self.image_slide.read_region_mm(coordinates, self.mm_p_px, self.patch_size).convert('RGB')
+        else: patch = self.image_slide.read_region_mm(coordinates, self.mpp[0], self.patch_size).convert('RGB')
         return patch
 
     def _get_coordinates(self, idx):

@@ -59,6 +59,8 @@ class BigPictureRepository(tc.utils.data.Dataset):
         else: 
             self.verbose = verbose
             self._load(path)
+            self.kwargs = wsidicomdataset_kwargs
+            self.kwargs['verbose'] = verbose
     
     def __len__(self):
         if self.return_type in ['wsi', 'path']:return len(self.imgs)
