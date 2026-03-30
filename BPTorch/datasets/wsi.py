@@ -73,6 +73,12 @@ class WsiDicomDataset():
         else:
             um2mm = 0.001 ## um * um2mm = mm (u = mu) converter
             self.mm_p_px = self.target_mpp*um2mm
+            ## convert patch size to mm
+            patch_height_mm = self.patch_size[0]*self.target_mpp*um2mm
+            patch_width_mm = self.patch_size[1]*self.target_mpp*um2mm
+            
+            ## overwrite stirdes and sizes
+            self.patch_size = (patch_height_mm,patch_width_mm)
             
             
     
