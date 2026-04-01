@@ -3,6 +3,7 @@ from torch.utils.data import DataLoader
 from BPTorch.utils import bptorch_collate
 from pprint import pprint
 import torchvision.transforms as T
+from datetime import datetime
 # pip install "BPTorch @ git+https://github.com/Bangulli/BPTorch"
 if __name__ == '__main__':
     ds = BigPictureRepository('/mnt/nas6/data/BigPicture_CBIR/datasets', verbose=False, return_type='patch', wsidicomdataset_kwargs=WsiDicomDataset.get_default_kwargs())
@@ -21,7 +22,10 @@ if __name__ == '__main__':
     patch = ds[213]
     pprint(patch)
     
-    dl = DataLoader(ds, 4, collate_fn=bptorch_collate, shuffle=True)
+    dl = DataLoader(ds, 256, collate_fn=bptorch_collate, shuffle=False) ## NOTE: Shuffling breaks the Repo's caching logic, leading to much slower data access as the random patches need to be accessed individually without a fallback on pre-loaded WsiDicom objects.
+    start = datetime.now()
     for batch in dl:
-        pprint(batch)
+        print(f"Loading batch took {datetime.now()-start}s")
+        start = datetime.now()
+        ## OPTIONAL: pprint(batch)
    

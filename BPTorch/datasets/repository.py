@@ -35,6 +35,8 @@ class BigPictureRepository(tc.utils.data.Dataset):
         Returns:
             BigPictureRepository: the instance
         """
+        self.cache_size = 2
+        self.cache = {}
         if not load:
             self.kwargs = wsidicomdataset_kwargs
             self.kwargs['verbose'] = verbose
@@ -76,13 +78,26 @@ class BigPictureRepository(tc.utils.data.Dataset):
         
         elif self.return_type=='patch':
             assert self.patches_prepared, "Return type is patch but data was attempted to be accessed before the patches were prepared."
+            key, p_idx, i_idx = self.patch_idx[idx]
+            corners, coords = self.patches[key]['corners'][p_idx], self.patches[key]['coords'][p_idx]
+            wsi = self._get_cache(self.imgs[i_idx])
+            return wsi[(corners, coords)]
+        
+    def _get_cache(self, pth):
+        if str(pth) in self.cache.keys():
+            return self.cache[str(pth)]
+        else:
             modkwargs = copy.deepcopy(self.kwargs)
             if 'metadata' in modkwargs.keys(): del modkwargs['metadata']
             modkwargs['precomputed'] = True
-            key, p_idx, i_idx = self.patch_idx[idx]
-            corners, coords = self.patches[key]['corners'][p_idx], self.patches[key]['coords'][p_idx]
-            wsi = WsiDicomDataset(self.imgs[i_idx], metadata=self.meta[self.imgs[i_idx].parent.parent.name][self.imgs[i_idx].name], **modkwargs)
-            return wsi[(corners, coords)]
+            new_instance = WsiDicomDataset(pth, metadata=self.meta[pth.parent.parent.name][pth.name], **modkwargs)
+            if len(self.cache)==self.cache_size:
+                ## delete oldest entry
+                oldest = list(self.cache.keys())[0]
+                del self.cache[oldest]
+                self.cache[str(pth)] = new_instance
+            else: self.cache[str(pth)] = new_instance
+            return self.cache[str(pth)]
             
     def prepare_patches(self):
         if self.patches_prepared: return
