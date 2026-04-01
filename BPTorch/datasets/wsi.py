@@ -49,6 +49,8 @@ class WsiDicomDataset():
         self.verbose = verbose
         self.meta = metadata
         self.target_mpp = target_mpp
+        
+        self.base_transfroms = T.ToTensor()
 
         if not precomputed:
             image_slide = WsiDicom.open(self.wsi_path)
@@ -70,8 +72,18 @@ class WsiDicomDataset():
 
             image_slide.close()
         else:
+            self._ensure_image_is_open()
             self.mpp = (self.target_mpp, self.target_mpp)
-            
+            try: self.resolution_level = self._infer_level(self.image_slide, self.target_mpp); self.resample=False
+            except: 
+                self.resample = True
+                um2mm = 0.001 ## um * um2mm = mm (u = mu) converter
+                self.mm_p_px = self.target_mpp*um2mm
+                ## convert patch size to mm
+                patch_height_mm = self.patch_size[0]*self.target_mpp*um2mm
+                patch_width_mm = self.patch_size[1]*self.target_mpp*um2mm
+                ## overwrite stirdes and sizes
+                self.patch_size = (patch_height_mm,patch_width_mm)
             
     
     @staticmethod      
@@ -211,16 +223,6 @@ class WsiDicomDataset():
             
     def _load_patch_at(self, coordinates):
         self._ensure_image_is_open()
-        try: self.resolution_level = self._infer_level(self.image_slide, self.target_mpp); self.resample=False
-        except: 
-            self.resample = True
-            um2mm = 0.001 ## um * um2mm = mm (u = mu) converter
-            self.mm_p_px = self.target_mpp*um2mm
-            ## convert patch size to mm
-            patch_height_mm = self.patch_size[0]*self.target_mpp*um2mm
-            patch_width_mm = self.patch_size[1]*self.target_mpp*um2mm
-            ## overwrite stirdes and sizes
-            self.patch_size = (patch_height_mm,patch_width_mm)
         if not self.resample: patch = self.image_slide.read_region(coordinates, self.resolution_level, self.patch_size).convert('RGB')
         else: patch = self.image_slide.read_region_mm(coordinates, self.mpp[0], self.patch_size).convert('RGB')
         return patch
@@ -252,7 +254,7 @@ class WsiDicomDataset():
     def __getitem__(self, idx : Union[int, tuple]) -> Tuple[tc.Tensor]:
         corners, coordinates = self._get_coordinates(idx) if type(idx)==int else idx
         patch = self._load_patch_at(corners)
-        patch = T.ToTensor()(patch)
+        patch = self.base_transfroms(patch)
         coordinates = tc.tensor(coordinates, dtype=int)
         if self.transforms is not None:
             patch = self.transforms(patch)

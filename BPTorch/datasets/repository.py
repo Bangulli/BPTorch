@@ -155,7 +155,7 @@ class BigPictureRepository(tc.utils.data.Dataset):
             plt.close()
             plt.clf()
     
-    def split(self, folds='0.9-0.1', stratify=None, eval_strategy = 'average', random_seed=42, tol=0.05, fail='raise', max_iter=100) -> list:
+    def split(self, folds='0.9-0.1', stratify=False, eval_strategy = 'average', random_seed=42, tol=0.05, fail='raise', max_iter=100) -> list:
         """Data splitting function. Supports random and stratified splitting according to the fields provided by BPMeta.get_supported_fields().
 
         Args:
@@ -201,7 +201,7 @@ class BigPictureRepository(tc.utils.data.Dataset):
             fold_assignments[to_fold].append(b)
         
         ## Return if no stratification is required
-        if not stratify:
+        if (not stratify) or (stratify is None):
             splits = []
             for k, v in fold_assignments.items():
                 fold_images = []

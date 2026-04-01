@@ -14,10 +14,12 @@ if __name__ == '__main__':
         s.get_stats_plot(f"/mnt/nas6/data/BigPicture_CBIR/datasets/BPTorch/fold_{i}")
         s.prepare_patches()
         s.save(f"/mnt/nas6/data/BigPicture_CBIR/datasets/BPTorch/fold_{i}/BPR.json")
+    
+    
     kwargs = WsiDicomDataset.get_default_kwargs()
     kwargs['transforms'] = T.Resize(224)
     kwargs['precomputed'] = True
-    ds = BigPictureRepository('/mnt/nas6/data/BigPicture_CBIR/datasets/BPTorch/fold_0/BPR.json', load=True, wsidicomdataset_kwargs=kwargs, verbose=False)
+    ds = BigPictureRepository('/mnt/nas6/data/BigPicture_CBIR/datasets/BPTorch/fold_0/BPR.json', load=True, wsidicomdataset_kwargs=kwargs, verbose=True)
     print(f"Dataset contains {len(ds)} foreground patches")
     patch = ds[213]
     pprint(patch)
