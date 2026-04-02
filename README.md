@@ -56,6 +56,12 @@ Extends ```torch.utils.data.Dataset``` so it is compatible with dataloaders. Dat
 
 #### Functions
 - ```prepare_patches```: If return_type is 'patch' prepares the patches for all images in the current repository instance according to the kwargs passed to [WsiDicomDataset](#wsidicomdataset)
+- ```source_precomputed_patches_from```: Points the repo instance to a direcotry of preextracted patch image files. This overwrites the actual data in the repo object, such that it only knows the files in the pointed dir, if that is a subset there will be no erroring or the like. If this function has been called only the patches in the directory can be returned, no fallback to reading dicom is currently implemented.
+    - ```path```: from where to source the files
+- ```save_patches_as_images```: If return_type is 'patch' saves all patches of the repo into separate .format files in outdir. This allows shuffling at runtime without shouldering the burden of costly dicom loading operations but costs more diskspace
+    - ```outdir```: where to store the files
+    - ```format```: what datatype to use, defaults to lossy jpeg
+    - ```randomize_subset```: If integer will take a randomized subset of N patches. If False, is ignored. Only available if patches are precomputed using ```prepare_patches```.
 - ```get_stats```: Returns a dictionary of the absoulute number of occurances of any metadata variable in the repository, as long as the metadata field is supported by [BPMeta](#bpmeta)
 - ```get_stats_plot```: Generates pie charts of the datadistribution of variables for each metadata field supported by [BPMeta](#bpmeta).
     - path: String or pathlib.Path; required; Path to a directory where the plots will be saved

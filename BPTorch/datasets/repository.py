@@ -8,11 +8,15 @@ from typing import Union, Tuple, Callable
 import time, glob, tqdm, re, pprint, random, warnings, json, copy
 import logging ## avoid weird wsidicom logspam: WARNING:root:Orientation [-1.0, 0.0, 0.0, 0.0, -1.0, 0.0] is not orthogonal with equal lengths with column rotated 90 deg from row
 logging.getLogger().setLevel(logging.ERROR)
+from random import shuffle
 ### External Imports ###
 import numpy as np
+from PIL import Image
 import torch as tc
 import matplotlib.pyplot as plt
 from wsidicom import WsiDicom
+from torchvision import transforms as T
+from torchvision.transforms.functional import pil_to_tensor
 ### Internal Imports ###
 from BPTorch.utils.metadata import BPMeta
 from BPTorch.datasets.wsi import WsiDicomDataset
@@ -37,6 +41,7 @@ class BigPictureRepository(tc.utils.data.Dataset):
         """
         self.cache_size = 2
         self.cache = {}
+        self.prepatched_source = None
         if not load:
             self.kwargs = wsidicomdataset_kwargs
             self.kwargs['verbose'] = verbose
@@ -58,15 +63,17 @@ class BigPictureRepository(tc.utils.data.Dataset):
             self.metadata_fields = BPMeta.get_supported_fields()
             self.unusable_images = []
             self.patches_prepared = False
+            
         else: 
-            self.verbose = verbose
+            self.verbose = verbose  
             self._load(path)
             self.kwargs = wsidicomdataset_kwargs
             self.kwargs['verbose'] = verbose
     
     def __len__(self):
         if self.return_type in ['wsi', 'path']:return len(self.imgs)
-        elif self.return_type=='patch': return len(self.patch_idx)
+        elif self.patches_prepared is None and self.return_type=='patch': return len(self.patch_idx)
+        elif self.patches_prepared is not None and self.return_type=='patch': return len(self.patch_paths)
     
     def __getitem__(self, idx):
         if self.return_type=='wsi':
@@ -77,31 +84,44 @@ class BigPictureRepository(tc.utils.data.Dataset):
         elif self.return_type=='path': return self.imgs[idx]
         
         elif self.return_type=='patch':
-            assert self.patches_prepared, "Return type is patch but data was attempted to be accessed before the patches were prepared."
-            key, p_idx, i_idx = self.patch_idx[idx]
-            corners, coords = self.patches[key]['corners'][p_idx], self.patches[key]['coords'][p_idx]
-            wsi = self._get_cache(self.imgs[i_idx])
-            return wsi[(corners, coords)]
+            if self.prepatched_source is None:
+                assert self.patches_prepared, "Return type is patch but data was attempted to be accessed before the patches were prepared."
+                key, p_idx, i_idx = self.patch_idx[idx]
+                corners, coords = self.patches[key]['corners'][p_idx], self.patches[key]['coords'][p_idx]
+                wsi = self._get_cache(self.imgs[i_idx])
+                return wsi[(corners, coords)]
+            else:
+                ## load and transform patch
+                img = pil_to_tensor(Image.open(self.prepatched_source/self.patch_paths[idx]))
+                if self.kwargs['transforms'] is not None:
+                    img = self.kwargs['transforms'](img)
+                
+                ## extract coords from filename
+                nme = self.patch_paths[idx].split('.')[0]
+                segments = nme.split('_')
+                coords = (segments[-2], segments[-1])
+                coords = tc.tensor([int(c.split('-')[-1]) for c in coords]).unsqueeze(0)
+                
+                ## handle metadata
+                metadata=self.meta[segments[0]][segments[1].replace('-', '_')]
+                
+                return {'image': img, 'coordinates': coords, 'metadata': metadata}
         
-    def _get_cache(self, pth):
-        if str(pth) in self.cache.keys():
-            return self.cache[str(pth)]
-        else:
-            modkwargs = copy.deepcopy(self.kwargs)
-            if 'metadata' in modkwargs.keys(): del modkwargs['metadata']
-            modkwargs['precomputed'] = True
-            new_instance = WsiDicomDataset(pth, metadata=self.meta[pth.parent.parent.name][pth.name], **modkwargs)
-            if len(self.cache)==self.cache_size:
-                ## delete oldest entry
-                oldest = list(self.cache.keys())[0]
-                del self.cache[oldest]
-                self.cache[str(pth)] = new_instance
-            else: self.cache[str(pth)] = new_instance
-            return self.cache[str(pth)]
+    def source_precomputed_patches_from(self, path):
+        self.prepatched_source = Path(path)   
+        self.patch_paths = os.listdir(self.prepatched_source)
             
     def prepare_patches(self):
-        if self.patches_prepared: return
+        """Iterate over all Images in the repository and determine which patches to use.
+
+        Raises:
+            e: Keyboard interrupt. Otherwise will just ignore the error and move on with the next image
+
+        Returns:
+            None: None
+        """
         assert self.return_type=='patch', f'It is not required to prepare patches, if the return type is {self.return_type}'
+        if self.patches_prepared: return
         iterator = self.imgs if self.verbose else tqdm.tqdm(self.imgs, desc=f'Preparing patches for {len(self.imgs)} WSIs')
         start_idx = 0
         for i1, img in enumerate(iterator):
@@ -133,7 +153,73 @@ class BigPictureRepository(tc.utils.data.Dataset):
                 self.unusable_images.append(img)
                 if 'KeyboardInterrupt' in str(e): raise e
             
-        self.patches_prepared = True
+        self.patches_prepared = True  
+        
+    def save_patches_as_images(self, outdir='patches', format='jpeg', randomize_subset=False):
+        """Iterate over all patches in the repo, be they prepared or not and save them as .format files in outdir. 
+
+        Args:
+            outdir (str, optional): Directory in which to store the patches. Defaults to 'patches'.
+            format (str, optional): Filetype in which to store the patches. Defaults to 'jpeg'.
+
+        Returns:
+            None: None
+        """
+        os.makedirs(outdir, exist_ok=True)
+        assert self.return_type=='patch', f'It is not required to prepare or save patches, if the return type is {self.return_type}'
+        to_pil = T.ToPILImage()
+        # if patches are prepared, iterate over self and save
+        if self.patches_prepared: 
+            iterator = list(range(len(self.patch_idx)))
+            if randomize_subset: shuffle(iterator)
+            iterator = tqdm.tqdm(iterator, desc=f'Saving {len(self.patch_idx)} Patches')
+            for n, idx in enumerate(iterator):
+                if randomize_subset == n: break
+                key, p_idx, i_idx = self.patch_idx[idx]
+                corners, coords = self.patches[key]['corners'][p_idx], self.patches[key]['coords'][p_idx]
+                patch_img = self._get_cache(self.imgs[i_idx])[(corners, coords)]
+                self._save_patch(outdir, to_pil(patch_img['image']), self.imgs[i_idx].name, self.imgs[i_idx].parent.parent.name, coords, format)
+            
+        # else prepare and save in the process
+        else:
+            iterator = self.imgs if self.verbose else tqdm.tqdm(self.imgs, desc=f'Preparing and saving patches for {len(self.imgs)} WSIs')
+            start_idx = 0
+            for i1, img in enumerate(iterator):
+                try:
+                    wsi = WsiDicomDataset(img, **self.kwargs)
+                    for corners, coords in zip(wsi.upper_left_corners, wsi.coordinates):
+                        patch_img = wsi[(corners, coords)]
+                        self._save_patch(outdir, to_pil(patch_img['image']), img.name, img.parent.parent.name, coords, format)
+                    
+                    n_patches = len(wsi)
+                    ### convert to json serializable
+                    coords = []
+                    for i in range(wsi.coordinates.shape[0]):
+                        coords.append((int(wsi.coordinates[i, 0]), int(wsi.coordinates[i, 1])))
+                    corners = []
+                    for i in range(wsi.upper_left_corners.shape[0]):
+                        corners.append((int(wsi.upper_left_corners[i, 0]), int(wsi.upper_left_corners[i, 1])))
+                    
+                    ## make dict
+                    cur_data = {
+                        'lower': start_idx,
+                        'upper': start_idx+n_patches,
+                        'coords': coords,
+                        'corners': corners
+                    }
+                    self.patches[start_idx]=cur_data
+                    for j in range(n_patches):
+                        self.patch_idx.append((start_idx, j, i1))
+                    start_idx+=n_patches
+                    
+                    
+                except Exception as e:
+                    if self.verbose: print(f"Image {img} cannot be patched and will be removed from the dataset")
+                    self.imgs.remove(img)
+                    self.unusable_images.append(img)
+                    if 'KeyboardInterrupt' in str(e): raise e
+                
+            self.patches_prepared = True 
         
     def get_stats(self):
         """Function to generate a dictionary of the metadata distribution in the repo
@@ -325,8 +411,13 @@ class BigPictureRepository(tc.utils.data.Dataset):
                 fold_images += being2images[b]
             splits.append(BigPictureRepository(path=self.root, images=fold_images, verbose=self.verbose, return_type=self.return_type, wsidicomdataset_kwargs=self.kwargs))
         return splits
-       
+        
     def save(self, path):
+        """Save the repository object as a json. This a pretty inefficient way of storing it after prepare_patches has been called as the patch coords are stored in json, making the file huge and slow to i/o
+
+        Args:
+            path (str or pl.Path): The output file path. should end in .json
+        """
         full_dict = {
             "kwargs":self.kwargs,
             "return_type":self.return_type,
@@ -343,7 +434,36 @@ class BigPictureRepository(tc.utils.data.Dataset):
         with open(path, "w") as f:
             json.dump(full_dict, f, indent=4)
     
+    def _get_cache(self, pth):
+        """Interface with the Dicom object cache. Dicom objects are cached to avoid costly memory access for each patch. If the amount of open datasets exceeds the limit of the cache size, the oldest is deleted and a new one is added. For this reason shuffling the dataloader is ill advised.
+
+        Args:
+            pth (pl.Path): The path to the dicom dir
+
+        Returns:
+            WsiDicomDataset: The dataset
+        """
+        if str(pth) in self.cache.keys():
+            return self.cache[str(pth)]
+        else:
+            modkwargs = copy.deepcopy(self.kwargs)
+            if 'metadata' in modkwargs.keys(): del modkwargs['metadata']
+            modkwargs['precomputed'] = True
+            new_instance = WsiDicomDataset(pth, metadata=self.meta[pth.parent.parent.name][pth.name], **modkwargs)
+            if len(self.cache)==self.cache_size:
+                ## delete oldest entry
+                oldest = list(self.cache.keys())[0]
+                del self.cache[oldest]
+                self.cache[str(pth)] = new_instance
+            else: self.cache[str(pth)] = new_instance
+            return self.cache[str(pth)]
+        
     def _load(self, path):
+        """Load the repo.json. Is invoked on the repo path if the load flag is set to true in the constructor
+
+        Args:
+            path (Union[str, Path]): The repo file path. should end in .json
+        """
         print("Loading file...")
         with open(path, "r") as f:
             full_dict = json.load(f)
@@ -363,7 +483,8 @@ class BigPictureRepository(tc.utils.data.Dataset):
         self.unusable_images = [Path(i) for i in full_dict['unusable_images']]
         self.patches_prepared = full_dict['patches_prepared']
         print("Done!")
-         
+
+    ## UTILS
     def _check_split_strat_tol(self, fold_stats, ref_stat, tol, image_counts, stratify): ## func to check if the split fulfill the stratification within tolerance
         folds = {'staining':True, 'diagnosis':True, 'organ':True, 'species':True}
         disc = {'staining':0, 'diagnosis':0, 'organ':0, 'species':0}
@@ -553,3 +674,7 @@ class BigPictureRepository(tc.utils.data.Dataset):
         try: return string, self.nomenclature['short2str'][string]
         except: return self.nomenclature['str2short'][string], string
         
+    def _save_patch(self, outdir: Union[str, Path], img: Image, img_id: str, ds_id: str, coords: tuple, format: str):
+        outdir = Path(outdir) if type(outdir)==str else outdir
+        filename = f"{ds_id.replace('_','-')}_{img_id.replace('_','-')}_W-{coords[0]}_H-{coords[1]}.{format}"
+        img.save(outdir/filename)
