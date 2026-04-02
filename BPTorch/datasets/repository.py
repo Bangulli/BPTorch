@@ -92,7 +92,7 @@ class BigPictureRepository(tc.utils.data.Dataset):
                 return wsi[(corners, coords)]
             else:
                 ## load and transform patch
-                img = pil_to_tensor(Image.open(self.prepatched_source/self.patch_paths[idx]))
+                img = pil_to_tensor(Image.open(self.prepatched_source/self.patch_paths[idx])).to(tc.float16)
                 if self.kwargs['transforms'] is not None:
                     img = self.kwargs['transforms'](img)
                 
