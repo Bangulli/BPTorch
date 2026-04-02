@@ -73,7 +73,7 @@ class BigPictureRepository(tc.utils.data.Dataset):
     def __len__(self):
         if self.return_type in ['wsi', 'path']:return len(self.imgs)
         elif self.patches_prepared is None and self.return_type=='patch': return len(self.patch_idx)
-        elif self.patches_prepared is not None and self.return_type=='patch': return len(self.patch_paths)
+        elif (self.prepatched_source is not None) and self.return_type=='patch': return len(self.patch_paths)
     
     def __getitem__(self, idx):
         if self.return_type=='wsi':
