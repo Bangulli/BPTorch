@@ -92,7 +92,8 @@ class BigPictureRepository(tc.utils.data.Dataset):
                 return wsi[(corners, coords)]
             else:
                 ## load and transform patch
-                img = pil_to_tensor(Image.open(self.prepatched_source/self.patch_paths[idx])).to(tc.float)
+                img = pil_to_tensor(Image.open(self.prepatched_source/self.patch_paths[idx]).convert('RGB')).to(tc.float)
+                if img.max().item()>1: img/=255 ## pil stores the images as integer rather than the floats they are served as from WsiDicomDataset
                 if self.kwargs['transforms'] is not None:
                     img = self.kwargs['transforms'](img)
                 
