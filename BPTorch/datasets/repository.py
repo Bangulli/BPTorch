@@ -43,6 +43,7 @@ class BigPictureRepository(tc.utils.data.Dataset):
         self.cache_size = 2
         self.cache = {}
         self.prepatched_source = None
+        self.metadata_fields = BPMeta.get_supported_fields()
         if not load:
             self.kwargs = wsidicomdataset_kwargs
             self.kwargs['verbose'] = verbose
@@ -61,7 +62,6 @@ class BigPictureRepository(tc.utils.data.Dataset):
                 'short2str': {},
                 'str2short': {}
             }
-            self.metadata_fields = BPMeta.get_supported_fields()
             self.unusable_images = []
             self.patches_prepared = False
             
@@ -227,6 +227,11 @@ class BigPictureRepository(tc.utils.data.Dataset):
         """
         if self.stats is None:
             self.stats, _, _ = self._find_all_beings()
+            return self.stats
+        elif self.prepatched_source is not None: ## recompute if a prepatches source is provided, indicating a subset.
+            print('Recomputing stats based on', str(self.prepatched_source))
+            self.stats, _, _ = self._find_all_beings_from_patches()
+            return self.stats
         else: return self.stats
     
     def get_stats_plot(self, path: Union[str, Path]):
@@ -585,6 +590,73 @@ class BigPictureRepository(tc.utils.data.Dataset):
             ## iter images
             for i in img:
                 cur_meta = self.meta[ds[b]][i.name]
+                
+                ## iter meta
+                for var in self.metadata_fields:
+                    val = cur_meta[var]
+                    val, _ = self._nomenclature_interface(val)
+                    if val not in list(total_stats[var].keys()):
+                        total_stats[var][val] = 1
+                    else: total_stats[var][val] += 1
+                    
+                    if val not in list(cur_vars[var].keys()):
+                        cur_vars[var][val] = 1
+                    else: cur_vars[var][val] += 1
+            beings[b] = cur_vars
+                
+        ## add non existing samples to the beings
+        for b in list(beings.keys()):
+            for var in self.metadata_fields:
+                ref = list(beings[b][var].keys())
+                for total in list(total_stats[var].keys()):
+                    if total not in ref:
+                        beings[b][var][total]=0
+                    else:
+                        beings[b][var][total]=beings[b][var][total]
+                
+        return total_stats, beings, being_images
+    
+    def _find_all_beings_from_patches(self) -> tuple:
+        beings = {}
+        total_stats = {
+            'staining':{},
+            'diagnosis':{},
+            'organ':{},
+            'species':{}
+        }        
+        being_images = {}
+        ds = {}
+        
+        ## iter images
+        for img in self.patch_paths:
+            nme = img.split('.')[0]
+            segments = nme.split('_')
+            cur_ds = segments[0]
+            id = segments[1].replace('-', '_')
+            meta = self.meta[cur_ds][id]
+            if meta['being'] not in list(being_images.keys()):
+                being_images[meta['being']]=[img]
+                ds[meta['being']]=cur_ds
+            else:
+                being_images[meta['being']].append(img)
+            
+        ## iter beings
+        for b, img in being_images.items():
+            cur_vars = {
+                'staining':{},
+                'diagnosis':{},
+                'organ':{},
+                'species':{}
+            }
+            
+            ## iter images
+            for id in img:
+                nme = id.split('.')[0]
+                segments = nme.split('_')
+                cur_ds = segments[0]
+                i = segments[1].replace('-', '_')
+                
+                cur_meta = self.meta[ds[b]][i]
                 
                 ## iter meta
                 for var in self.metadata_fields:
