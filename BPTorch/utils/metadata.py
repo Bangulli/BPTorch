@@ -14,6 +14,7 @@ from bigpicture_metadata_interface.model.stain import (
 )
 import os
 from pathlib import Path
+from pprint import pprint
 
 # TODO:
 #   - Fix diagnosis
@@ -76,11 +77,23 @@ class BPMeta():
         
     def _get_diagnosis(self, observation: Observation):
         try:
-            try: diagnosis = observation.statement.code_attributes['Diagnosis']
-            except: diagnosis = [diag for k, diag in observation.statement.custom_attributes.items() if 'diagnosis' in k.lower()]
+            diagnosis = [diag for k, diag in observation.statement.custom_attributes.items() if "finding" in str(observation.statement.statement_type).lower()]
+            if not any(diagnosis): diagnosis = [diag.meaning for k, diag in observation.statement.code_attributes.items() if "finding" in str(observation.statement.statement_type).lower()]
+            if not any(diagnosis): raise
         except:
-            try: diagnosis = [diagnose for tag, diagnose in observation.statement.custom_attributes.items() if "diagnosis" in tag.lower() and isinstance(diagnose, str)]
-            except: diagnosis = 'unknown'
+            try:
+                try: diagnosis = observation.statement.code_attributes['Diagnosis']
+                except: 
+                    diagnosis = [diag for k, diag in observation.statement.custom_attributes.items() if 'diagnosis' in k.lower()]
+                    if not any(diagnosis): diagnosis = [diag.meaning for k, diag in observation.statement.code_attributes.items() if 'diagnosis' in k.lower()]
+                    if not any(diagnosis): raise
+            except:
+                try: 
+                    diagnosis = [diag for tag, diag in observation.statement.custom_attributes.items() if "diagnosis" in tag.lower()]
+                    if not any(diagnosis): diagnosis = [diag.meaning for tag, diag in observation.statement.code_attributes.items() if "diagnosis" in tag.lower()]
+                    if not any(diagnosis): raise
+                except: diagnosis = 'unknown'
+        #if diagnosis == "" or diagnosis == "unknown" or diagnosis == []: pprint(observation)
         return diagnosis
 
 
